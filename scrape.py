@@ -57,8 +57,54 @@ def get_zoning(driver, addr: list[str], first_run: bool) -> str:
 		return zoning
 
 
-def get_dda(driver, addr: list[str]) -> str:
-	pass # TODO
+def get_dda(driver, addr) -> bool:
+	# xpath to popup /html/body/div[1]/main/div/div[4]/div/div[2]/article/div/div/div/div[3]/div/div[2]/div[1]/div[3]/div[2]/div[2]     
+	dda = False
+	dda_url = 'https://www.huduser.gov/portal/sadda/sadda_qct.html'
+	driver.get(dda_url)
+
+	# wait for page to fully load
+	time.sleep(1)
+	info_2024 = WebDriverWait(driver, 10).until(
+		EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/main/div/div[4]/div/div[2]/article/div/div/div/div[3]/div/div[1]/form/fieldset/calcite-radio-button-group/calcite-label[2]'))
+	)
+	info_2024.click()
+	
+	search_form = WebDriverWait(driver, 10).until(
+		EC.presence_of_element_located((By.CLASS_NAME, 'esri-search__input'))
+	)
+	search_form.send_keys(addr)
+	search_form.send_keys(Keys.RETURN)
+
+	# wait for address to be zoomed in on
+	time.sleep(3)
+	show_dda = WebDriverWait(driver, 10).until(
+		EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/main/div/div[4]/div/div[2]/article/div/div/div/div[3]/div/div[1]/ul/li[3]/div/div/span[1]/span'))
+	)
+	show_dda.click()
+	
+	driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 3);")
+	time.sleep(0.5) # delay to finish scrolling
+
+	# always runs after resource
+	x = -187
+	y = -34
+	actions = ActionChains(driver)
+	actions.move_by_offset(x, y).click().perform()
+
+	try:
+		# wait for popup to change
+		# TODO: close original popup first
+		time.sleep(2) 
+
+		in_dda = WebDriverWait(driver, 2).until(
+			EC.presence_of_element_located((By.XPATH, '/html/body/div[1]/main/div/div[4]/div/div[2]/article/div/div/div/div[3]/div/div[2]/div[1]/div[3]/div[2]/div[2]/div[1]/div/calcite-flow/calcite-flow-item/h2'))
+		)
+		if in_dda.text == 'SADDA Data':
+			dda = True
+	except Exception as e:
+		dda = False
+	return dda
 
 def get_resource(driver, addr: str, first_run: bool) -> str:
 	resource_level = ''
@@ -71,7 +117,6 @@ def get_resource(driver, addr: str, first_run: bool) -> str:
 		)
 		driver.switch_to.frame(iframe)
 		
-		actions = ActionChains(driver)
 		search_box = WebDriverWait(driver, 10).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'mapboxgl-ctrl-geocoder--input'))
 		)
@@ -84,10 +129,12 @@ def get_resource(driver, addr: str, first_run: bool) -> str:
 
 
 		# wait for zoom
-		time.sleep(4)
-		x = 632 if first_run else 0
-		y = 442 if first_run else 0
+		time.sleep(6)
+		x = 610 if first_run else 187
+		y = 352 if first_run else 34
+		actions = ActionChains(driver)
 		actions.move_by_offset(x, y).click().perform()
+		time.sleep(5)
 
 		resource_level = WebDriverWait(driver, 10).until(
 			EC.presence_of_element_located((By.ID, 'score-name'))
@@ -101,25 +148,29 @@ def get_resource(driver, addr: str, first_run: bool) -> str:
 
 
 if __name__ == "__main__":
-	addrs = ['5455 Wilshire Blvd', '5425 Wilshire Blvd']
+	addrs = ['5455 Wilshire Blvd Los Angeles CA', '2641 Magnolia Ave Los Angeles CA']
 
 	chrome_options = Options()
 	''' 
 	some notes on the commented lines:
 		if headless, I have to set the window size for clicking on the map
 		somehow this is slower than not headless. 
+	Further todo: I know this is not in the slightest bit optimized, wanted MVP first
+				  Will make parallel in the future, run 3 procs for each zoning resource level and dda for each addr 
 	'''
 	# chrome_options.add_argument("--headless")
 	driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-	# driver.set_window_size(903, 878)
+	driver.set_window_size(903, 878)
 
 	first_run = True
-	for addr in addrs:		
+	for addr in addrs:
 		zoning = get_zoning(driver, addr.split(), first_run)
 		resource_level = get_resource(driver, addr, first_run)
 		dda = get_dda(driver, addr)
 
-		print(f'{addr}\n  Resource level: {resource_level}\n  Zoning: {zoning}')
+		print(f'{addr}\n  Resource level: {resource_level}\n  Zoning: {zoning}\n  DDA: {dda}')
 		print()
 		first_run = False
+	
+
 	driver.quit()
